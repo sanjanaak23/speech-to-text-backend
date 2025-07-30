@@ -7,70 +7,46 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-const storeTranscription = async (filename, transcription, userId) => {
+const storeTranscription = async (filename, transcription, userId = 'anonymous') => {
   try {
-    const filePath = path.normalize(path.join(__dirname, '../../backend/uploads', filename));
-    console.log('Looking for file at:', filePath);
-
+    const filePath = path.join(__dirname, '../../backend/uploads', filename);
+    
+    // Verify file exists
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found at: ${filePath}`);
     }
 
-    // Read file as buffer
-    const fileData = fs.readFileSync(filePath);
-    console.log('File size:', fileData.length, 'bytes');
-
     // Upload to storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const fileData = fs.readFileSync(filePath);
+    const { error: uploadError } = await supabase.storage
       .from('audio-files')
-      .upload(
-        `user-${userId}/${filename}`,
-        fileData,
-        {
-          contentType: filename.endsWith('.wav') ? 'audio/wav' : 'audio/webm',
-          upsert: true,
-          duplex: 'half' // Explicitly set duplex mode
-        }
-      );
+      .upload(`user-${userId}/${filename}`, fileData, {
+        contentType: 'audio/*',
+        upsert: true
+      });
 
-    if (uploadError) {
-      console.error('Storage upload error:', uploadError);
-      throw uploadError;
-    }
+    if (uploadError) throw uploadError;
 
     // Get public URL
-    const { data: urlData } = supabase.storage
+    const { data: { publicUrl } } = supabase.storage
       .from('audio-files')
       .getPublicUrl(`user-${userId}/${filename}`);
-    console.log('Public URL:', urlData.publicUrl);
 
     // Store in database
     const { data, error } = await supabase
       .from('transcriptions')
       .insert([{
-        audio_url: urlData.publicUrl,
+        audio_url: publicUrl,
         transcription,
-        user_id: userId,
-        created_at: new Date().toISOString()
+        user_id: userId
       }])
-      .select(); // Important: Add .select() to return the inserted data
+      .select();
 
-    if (error) {
-      console.error('Database insert error:', error);
-      throw error;
-    }
-
-    // Verify insertion
-    const { data: verifyData } = await supabase
-      .from('transcriptions')
-      .select('*')
-      .eq('id', data[0].id);
-
-    console.log('Verified insertion:', verifyData);
+    if (error) throw error;
     return data[0];
 
   } catch (error) {
-    console.error('Supabase operation failed:', error);
+    console.error('Supabase Error:', error.message);
     throw error;
   }
 };

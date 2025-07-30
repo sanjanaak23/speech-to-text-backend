@@ -4,17 +4,33 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "build": "npm install && mkdir -p uploads",
     "dev": "nodemon index.js"
   },
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
-    "axios": "^1.6.2",
+    "@supabase/supabase-js": "^2.53.0",
+    "axios": "^1.11.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
     "multer": "^1.4.5-lts.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
-  }
+    "nodemon": "^3.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sanjanaak23/speech-to-text-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sanjanaak23/speech-to-text-backend/issues"
+  },
+  "homepage": "https://github.com/sanjanaak23/speech-to-text-backend#readme",
+  "description": ""
 }
