@@ -1,5 +1,6 @@
 const axios = require('axios');
 const fs = require('fs');
+const path = require('path');
 
 const transcribeWithDeepgram = async (audioPath) => {
   try {
@@ -9,6 +10,15 @@ const transcribeWithDeepgram = async (audioPath) => {
 
     console.log('Reading audio file...');
     const audioData = fs.readFileSync(audioPath);
+    const fileExt = path.extname(audioPath).toLowerCase();
+
+    // Determine content type based on file extension
+    let contentType = 'audio/*';
+    if (fileExt === '.wav') contentType = 'audio/wav';
+    else if (fileExt === '.mp3') contentType = 'audio/mpeg';
+    else if (fileExt === '.webm') contentType = 'audio/webm';
+    else if (fileExt === '.ogg') contentType = 'audio/ogg';
+    else if (fileExt === '.m4a') contentType = 'audio/x-m4a';
 
     console.log('Sending to Deepgram...');
     const response = await axios.post(
@@ -17,9 +27,16 @@ const transcribeWithDeepgram = async (audioPath) => {
       {
         headers: {
           'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-          'Content-Type': 'audio/*'
+          'Content-Type': contentType
         },
-        timeout: 30000
+        timeout: 60000, // Increased timeout to 60 seconds
+        params: {
+          model: 'nova-2',
+          language: 'en-US',
+          punctuate: true,
+          diarize: false,
+          smart_format: true
+        }
       }
     );
 
@@ -34,9 +51,21 @@ const transcribeWithDeepgram = async (audioPath) => {
   } catch (error) {
     console.error('Deepgram API Error:', {
       status: error.response?.status,
+      statusText: error.response?.statusText,
       data: error.response?.data,
       message: error.message
     });
+    
+    if (error.response?.status === 401) {
+      throw new Error('Invalid Deepgram API key');
+    } else if (error.response?.status === 413) {
+      throw new Error('Audio file too large for Deepgram');
+    } else if (error.response?.status === 400) {
+      throw new Error('Invalid audio format or corrupted file');
+    } else if (error.code === 'ECONNABORTED') {
+      throw new Error('Request timeout - audio file may be too large or processing took too long');
+    }
+    
     throw new Error(`Transcription failed: ${error.message}`);
   }
 };

@@ -3,9 +3,10 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const { Storage } = require('@google-cloud/storage');
-const speech = require('@google-cloud/speech').v1; // Updated to use v1 of the client
+const speech = require('@google-cloud/speech').v1;
 const rateLimit = require('express-rate-limit');
 const bodyParser = require('body-parser');
+const { transcribeWithDeepgram } = require('./services/deepgramService');
 
 const app = express();
 
@@ -67,12 +68,22 @@ app.use(bodyParser.urlencoded({
   parameterLimit: 50000
 }));
 
-// Initialize Google Cloud clients
-const storage = new Storage({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID // Added project ID
-});
-const speechClient = new speech.SpeechClient();
+// Initialize Google Cloud clients only if credentials are available
+let storage, speechClient;
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS && process.env.GOOGLE_CLOUD_PROJECT_ID) {
+  try {
+    storage = new Storage({
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      projectId: process.env.GOOGLE_CLOUD_PROJECT_ID
+    });
+    speechClient = new speech.SpeechClient();
+    console.log('Google Cloud Speech client initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize Google Cloud clients:', error.message);
+  }
+} else {
+  console.log('Google Cloud credentials not found, using Deepgram for transcription');
+}
 
 // Configure multer for file uploads
 const upload = multer({
@@ -80,11 +91,21 @@ const upload = multer({
   limits: {
     fileSize: 25 * 1024 * 1024 // 25MB
   },
-  fileFilter: (req, file, cb) => { // Added file filter
-    if (file.mimetype === 'audio/webm' || file.mimetype === 'audio/wav') {
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'audio/wav',
+      'audio/mp3',
+      'audio/mpeg',
+      'audio/webm',
+      'audio/ogg',
+      'audio/x-wav',
+      'audio/x-m4a'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type'), false);
+      cb(new Error(`Invalid file type: ${file.mimetype}. Only audio files are allowed`), false);
     }
   }
 });
@@ -93,7 +114,11 @@ const upload = multer({
 app.get('/api/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    services: {
+      googleCloud: !!speechClient,
+      deepgram: !!process.env.DEEPGRAM_API_KEY
+    }
   });
 });
 
@@ -101,40 +126,99 @@ app.get('/api/health', (req, res) => {
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No audio file provided' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'No audio file provided' 
+      });
     }
 
-    const audioBytes = req.file.buffer.toString('base64');
-    const audio = {
-      content: audioBytes
-    };
+    console.log('Processing audio file:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
 
-    const config = {
-      encoding: 'WEBM_OPUS',
-      sampleRateHertz: 48000,
-      languageCode: 'en-US',
-      enableAutomaticPunctuation: true,
-      model: 'default',
-      audioChannelCount: 2 // Added for better stereo audio handling
-    };
+    let transcription;
 
-    const request = {
-      audio: audio,
-      config: config
-    };
+    // Try Google Cloud Speech first if available
+    if (speechClient) {
+      try {
+        console.log('Attempting transcription with Google Cloud Speech...');
+        const audioBytes = req.file.buffer.toString('base64');
+        const audio = {
+          content: audioBytes
+        };
 
-    const [operation] = await speechClient.longRunningRecognize(request);
-    const [response] = await operation.promise();
-    
-    const transcription = response.results
-      .map(result => result.alternatives[0].transcript)
-      .join('\n');
+        const config = {
+          encoding: 'WEBM_OPUS',
+          sampleRateHertz: 48000,
+          languageCode: 'en-US',
+          enableAutomaticPunctuation: true,
+          model: 'default',
+          audioChannelCount: 2
+        };
+
+        const request = {
+          audio: audio,
+          config: config
+        };
+
+        const [operation] = await speechClient.longRunningRecognize(request);
+        const [response] = await operation.promise();
+        
+        transcription = response.results
+          .map(result => result.alternatives[0].transcript)
+          .join('\n');
+
+        console.log('Google Cloud Speech transcription successful');
+      } catch (googleError) {
+        console.error('Google Cloud Speech failed:', googleError.message);
+        // Fall back to Deepgram
+      }
+    }
+
+    // Use Deepgram if Google Cloud failed or is not available
+    if (!transcription && process.env.DEEPGRAM_API_KEY) {
+      try {
+        console.log('Attempting transcription with Deepgram...');
+        
+        // Save file temporarily for Deepgram
+        const fs = require('fs');
+        const path = require('path');
+        const { v4: uuidv4 } = require('uuid');
+        
+        const uploadDir = path.join(__dirname, 'uploads');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        
+        const tempFilePath = path.join(uploadDir, `temp-${uuidv4()}.webm`);
+        fs.writeFileSync(tempFilePath, req.file.buffer);
+        
+        transcription = await transcribeWithDeepgram(tempFilePath);
+        
+        // Clean up temp file
+        fs.unlinkSync(tempFilePath);
+        
+        console.log('Deepgram transcription successful');
+      } catch (deepgramError) {
+        console.error('Deepgram failed:', deepgramError.message);
+        throw new Error('All transcription services failed');
+      }
+    }
+
+    if (!transcription) {
+      return res.status(500).json({
+        success: false,
+        error: 'No transcription service available. Please check your API keys.'
+      });
+    }
 
     res.json({ 
       success: true,
       transcription,
-      language: config.languageCode,
-      duration: req.file.buffer.length / (config.sampleRateHertz * 2) // Approx duration in seconds
+      language: 'en-US',
+      duration: req.file.buffer.length / (48000 * 2) // Approx duration in seconds
     });
   } catch (error) {
     console.error('Error during transcription:', error);
@@ -148,7 +232,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Error middleware caught:', err.stack);
   
   if (err.message.includes('CORS')) {
     return res.status(403).json({ 
@@ -176,4 +260,7 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('Available services:');
+  console.log(`- Google Cloud Speech: ${!!speechClient}`);
+  console.log(`- Deepgram: ${!!process.env.DEEPGRAM_API_KEY}`);
 });
