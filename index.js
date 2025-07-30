@@ -1,13 +1,17 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
+const cors = require("cors");
 const app = express();
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000'],
+  origin: [
+    'http://localhost:3000',
+    'https://speech-to-text-frontend-fqapj0aph.vercel.app/' // ✅ replace with your actual deployed frontend domain
+  ],
   credentials: true
 }));
+
 app.use(express.json());
 
 // Routes
