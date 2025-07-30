@@ -16,7 +16,10 @@ app.set('trust proxy', true);
 // Configure CORS
 const allowedOrigins = [
   'https://speech-to-text-frontend-7b4qt3wod.vercel.app',
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'https://*.vercel.app',
+  'https://*.render.com',
+  'https://*.onrender.com'
 ];
 
 const corsOptions = {
@@ -47,11 +50,6 @@ const limiter = rateLimit({
   max: 100, // Limit each IP to 100 requests per window
   standardHeaders: true, // Return rate limit info in headers
   legacyHeaders: false, // Disable legacy headers
-  keyGenerator: (req) => {
-    // Proper IP handling for both IPv4 and IPv6
-    const ip = req.ip || req.connection.remoteAddress;
-    return ip.replace(/:\d+[^:]*$/, ''); // Remove port number if present
-  },
   validate: { 
     ip: false, // Disable IP validation since we're handling it manually
     xForwardedForHeader: false // Disable if not using proxy
