@@ -1,0 +1,47 @@
+{
+  "name": "speech-to-text-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "build": "npm install && mkdir -p uploads",
+    "dev": "nodemon index.js",
+    "deploy:setup": "./deploy.sh",
+    "deploy:render": "echo 'Deploy to Render: Follow DEPLOYMENT.md'",
+    "deploy:vercel": "echo 'Deploy to Vercel: Follow DEPLOYMENT.md'",
+    "test:health": "curl -s http://localhost:3001/api/health | jq . || curl -s http://localhost:3001/api/health"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^3.13.0",
+    "@google-cloud/speech": "^7.2.0",
+    "@google-cloud/storage": "^7.16.0",
+    "@supabase/supabase-js": "^2.53.0",
+    "axios": "^1.11.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sanjanaak23/speech-to-text-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sanjanaak23/speech-to-text-backend/issues"
+  },
+  "homepage": "https://github.com/sanjanaak23/speech-to-text-backend#readme",
+  "description": ""
+}
